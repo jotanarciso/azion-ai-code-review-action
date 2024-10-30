@@ -1,7 +1,12 @@
-import { getOctokit } from '@actions/github';
-import { Azion } from 'azion';
+import * as github from '@actions/github';
+import { chat } from 'azion/ai';
 
 const MAX_CHANGES = 1000;
+const DEFAULT_PROMPT = `Analyze the following commit and provide:
+1. A brief summary of changes
+2. Code quality assessment
+3. Potential issues or improvements
+4. Security considerations if applicable`;
 
 async function getCommitChanges(octokit, context, commitSha) {
   const response = await octokit.rest.repos.getCommit({
@@ -21,15 +26,15 @@ async function buildCommitContext(commit, changes) {
   }));
 
   return `
-## Commit Context
-- SHA: ${commit.sha}
-- Author: ${commit.commit.author.name}
-- Message: ${commit.commit.message}
+## Commit Analysis
+SHA: ${commit.sha}
+Author: ${commit.commit.author.name}
+Message: ${commit.commit.message}
 
-### Changed Files:
+Changed Files:
 ${files.map(f => `- ${f.name} (${f.changes})`).join('\n')}
 
-### Code Changes:
+Code Changes:
 \`\`\`diff
 ${files.map(f => f.patch).join('\n')}
 \`\`\`
@@ -40,7 +45,7 @@ async function analyzePR(octokit, context) {
   const commits = await octokit.rest.pulls.listCommits({
     owner: context.repo.owner,
     repo: context.repo.repo,
-    pull_number: context.issue.number
+    pull_number: context.payload.pull_request.number
   });
 
   let finalReview = '# Code Review Summary\n\n';
@@ -64,7 +69,7 @@ Please consider breaking down the changes into smaller, incremental commits for 
       await octokit.rest.issues.createComment({
         owner: context.repo.owner,
         repo: context.repo.repo,
-        issue_number: context.issue.number,
+        issue_number: context.payload.pull_request.number,
         body: errorMessage
       });
       
@@ -73,30 +78,29 @@ Please consider breaking down the changes into smaller, incremental commits for 
 
     try {
       const commitContext = await buildCommitContext(commit, changes);
-      const azion = new Azion(process.env.AZION_API_TOKEN);
-      const response = await azion.chat.completions.create({
-        messages: [
-          {
-            role: 'system',
-            content: `You are a code review expert. Analyze the following commit and provide:
-1. A brief summary of changes
-2. Code quality assessment
-3. Potential issues or improvements
-4. Security considerations if applicable`
-          },
-          {
-            role: 'user',
-            content: commitContext
-          }
-        ]
-      });
+      const { data: response, error } = await chat(
+        {
+          messages: [
+            { 
+              role: 'user', 
+              content: `${DEFAULT_PROMPT}\n\n${commitContext}` 
+            }
+          ]
+        },
+        { debug: true }
+      );
 
-      finalReview += `\n## Review for commit ${commit.sha.substring(0,7)}
+      if (response) {
+        finalReview += `\n## Review for commit ${commit.sha.substring(0,7)}
 > ${commit.commit.message}
 
 ${response.choices[0].message.content}
 ---
 `;
+      } else {
+        console.error('Error in AI response:', error);
+        finalReview += `\n\n### ❌ Error analyzing commit ${commit.sha.substring(0,7)}`;
+      }
     } catch (error) {
       console.error(`Error analyzing commit ${commit.sha}:`, error);
       finalReview += `\n\n### ❌ Error analyzing commit ${commit.sha.substring(0,7)}`;
@@ -117,17 +121,17 @@ ${response.choices[0].message.content}
   await octokit.rest.issues.createComment({
     owner: context.repo.owner,
     repo: context.repo.repo,
-    issue_number: context.issue.number,
+    issue_number: context.payload.pull_request.number,
     body: finalReview + '\n\n---\n' + footer
   });
 }
 
-try {
-  const token = process.env.GITHUB_TOKEN;
-  const octokit = getOctokit(token);
-  
-  await analyzePR(octokit, context);
-} catch (error) {
-  console.error('Execution error:', error);
-  process.exit(1);
-}
+(async () => {
+  try {
+    const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
+    await analyzePR(octokit, github.context);
+  } catch (error) {
+    console.error('Execution error:', error);
+    process.exit(1);
+  }
+})();
