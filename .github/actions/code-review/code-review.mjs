@@ -1,4 +1,3 @@
-import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { chat } from 'azion/ai';
 
@@ -120,7 +119,7 @@ async function analyzePR(octokit, context) {
   }
 
   // Agora que temos os arrays preenchidos, montamos o review
-  let finalReview = `${HEADER}# 🔍 Code Review
+  let finalReview = `${HEADER}# 🔍 Azion AI - Code Review
 
 ## Table of Contents
 - [Commit Reviews](#commit-reviews)
