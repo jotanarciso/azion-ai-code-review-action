@@ -1,15 +1,18 @@
+import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { chat } from 'azion/ai';
 
-const MAX_CHANGES = 1000;
-const DEFAULT_PROMPT = `Analyze the following commit and provide:
+// Pegando os inputs da action
+const CUSTOM_PROMPT = process.env.CUSTOM_PROMPT || `Analyze the following commit and provide:
 1. A brief summary of changes
 2. Code quality assessment
 3. Potential issues or improvements
 4. Security considerations if applicable`;
 
+const MAX_CHANGES = parseInt(process.env.MAX_FILES) || 1000;
+
 const HEADER = `<div align="center">
-  <img src="https://i.postimg.cc/FHMXGQxJ/azion-ai.webp" alt="Azion AI Logo" width="500" height="301">
+  <img src="https://i.postimg.cc/vm4jJ20w/azion-ai.webp" alt="Azion AI Logo" width="500" height="301">
 </div>\n\n`;
 
 async function getCommitChanges(octokit, context, commitSha) {
@@ -97,7 +100,7 @@ async function analyzePR(octokit, context) {
           messages: [
             { 
               role: 'user', 
-              content: `${DEFAULT_PROMPT}\n\n${commitContext}` 
+              content: `${CUSTOM_PROMPT}\n\n${commitContext}` 
             }
           ]
         },
@@ -121,24 +124,22 @@ async function analyzePR(octokit, context) {
 
 ## Table of Contents
 - [Commit Reviews](#commit-reviews)
-${commitReviews.map(r => `  - [${r.sha.substring(0,7)}](#${r.sha.substring(0,7)})`).join('\n')}
-${largeCommits.map(r => `  - [${r.sha.substring(0,7)}](#${r.sha.substring(0,7)}) ❌`).join('\n')}
+${commitReviews.map(r => `  - [${r.sha.substring(0,7)}: ${r.message}](#${r.sha.substring(0,7)})`).join('\n')}
+${largeCommits.map(r => `  - [${r.sha.substring(0,7)}: ${r.message}](#${r.sha.substring(0,7)}) ❌`).join('\n')}
 - [Summary](#summary)
 
 ## Commit Reviews\n\n`;
 
   // Adiciona reviews dos commits válidos e grandes na mesma seção
   for (const review of commitReviews) {
-    finalReview += `### ✅ <span id="${review.sha.substring(0,7)}">Commit ${review.sha.substring(0,7)}</span>
-> ${review.message}
+    finalReview += `### ✅ <span id="${review.sha.substring(0,7)}">Commit ${review.sha.substring(0,7)}: ${review.message}</span>
 
 ${review.review}
 ---\n\n`;
   }
 
   for (const commit of largeCommits) {
-    finalReview += `### ❌ <span id="${commit.sha.substring(0,7)}">Commit ${commit.sha.substring(0,7)}</span>
-> ${commit.message}
+    finalReview += `### ❌ <span id="${commit.sha.substring(0,7)}">Commit ${commit.sha.substring(0,7)}: ${commit.message}</span>
 
 This commit exceeds the recommended limit of ${MAX_CHANGES} lines (found ${commit.changes} changes).
 Please consider breaking down the changes into smaller, incremental commits for better review.
@@ -158,7 +159,7 @@ Please consider breaking down the changes into smaller, incremental commits for 
       messages: [
         {
           role: 'user',
-          content: `${prContext}
+          content: `${CUSTOM_PROMPT}\n\n${prContext}
 
 Commits Analysis:
 ${commitReviews.map(r => `- ${r.sha.substring(0,7)}: ${r.message}`).join('\n')}
@@ -173,7 +174,7 @@ Provide a brief, focused summary of the changes, their impact, and any key recom
   );
 
   if (finalSummary) {
-    finalReview += `## 📋 Summary\n\n${finalSummary.choices[0].message.content}\n\n`;
+    finalReview += `## 📋 <span id="summary">Summary</span>\n\n${finalSummary.choices[0].message.content}\n\n`;
   }
 
   const logoUrl = 'https://avatars.githubusercontent.com/u/6660972?s=200&v=4';
