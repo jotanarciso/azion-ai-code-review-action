@@ -18,7 +18,7 @@ inputs:
   max-files:
     description: 'Maximum number of files to review'
     required: false
-    default: '10'
+    default: '30'
 
 # Define como a action será executada
 runs:
