@@ -9,7 +9,7 @@ const DEFAULT_PROMPT = `Analyze the following commit and provide:
 4. Security considerations if applicable`;
 
 const HEADER = `<div align="center">
-  <img src="https://raw.githubusercontent.com/${process.env.GITHUB_REPOSITORY}/main/.github/actions/azion-ai-logo.png" alt="Azion AI Logo" width="150" height="150">
+  <img src="https://raw.githubusercontent.com/${process.env.GITHUB_REPOSITORY}/refs/heads/${process.env.GITHUB_HEAD_REF}/.github/actions/code-review/azion-ai-logo.png" alt="Azion AI Logo" width="150" height="150">
 </div>\n\n`;
 
 async function getCommitChanges(octokit, context, commitSha) {
