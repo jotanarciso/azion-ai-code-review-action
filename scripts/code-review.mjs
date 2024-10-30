@@ -1,5 +1,5 @@
 import * as github from '@actions/github';
-import { chat } from 'azion/ai';
+import { chat } from 'azion/i';
 
 async function runCodeReview() {
   const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
