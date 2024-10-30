@@ -53,8 +53,8 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const conclusion = steps.code_review.outcome === 'success' ? 'success' : 'failure';
-            const summary = steps.code_review.outcome === 'success' 
+            const conclusion = '${{ steps.code_review.outcome }}' === 'success' ? 'success' : 'failure';
+            const summary = '${{ steps.code_review.outcome }}' === 'success' 
               ? 'The code review was completed successfully.'
               : 'The code review process failed. Please check the logs for more details.';
             
