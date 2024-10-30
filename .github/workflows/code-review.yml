@@ -27,4 +27,4 @@ jobs:
           azion-token: ${{ secrets.AZION_TOKEN }}
           prompt: |
             Analyze the following pull request and provide a summary of what it implements, including good practices, possible problems, and suggestions for improvement.
-          max-files: 50
+          max-files: 1000

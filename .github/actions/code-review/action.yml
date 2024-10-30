@@ -18,7 +18,7 @@ inputs:
   max-files:
     description: 'Maximum number of files to review'
     required: false
-    default: '30'
+    default: '1000'
 
 # Define como a action será executada
 runs:
@@ -41,5 +41,5 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         AZION_TOKEN: ${{ inputs.azion-token }}
         CUSTOM_PROMPT: ${{ inputs.prompt }}
-        MAX_FILES: ${{ inputs.max-files }}
+        MAX_LINES: ${{ inputs.max-files }}
       run: node ${{ github.action_path }}/code-review.mjs

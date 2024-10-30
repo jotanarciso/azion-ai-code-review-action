@@ -8,7 +8,7 @@ const CUSTOM_PROMPT = process.env.CUSTOM_PROMPT || `Analyze the following commit
 3. Potential issues or improvements
 4. Security considerations if applicable`;
 
-const MAX_CHANGES = parseInt(process.env.MAX_FILES) || 1000;
+const MAX_CHANGES = parseInt(process.env.MAX_LINES) || 1000;
 
 const HEADER = `<div align="center">
   <img src="https://i.postimg.cc/vm4jJ20w/azion-ai.webp" alt="Azion AI Logo" width="300" height="300">
