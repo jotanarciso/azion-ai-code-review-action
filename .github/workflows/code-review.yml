@@ -6,6 +6,10 @@ on:
     branches:
       - main
       - stage
+  push:
+    branches:
+      - main
+      - stage
 
 permissions:
   contents: read
