@@ -155,7 +155,7 @@ Provide a brief, focused summary of the changes, their impact, and any key recom
   }
 
   // Adiciona seção de commit reviews
-  finalReview += `## Commit Reviews\n\n`;
+  finalReview += `## <span id="commit-reviews">Commit Reviews</span>\n\n`;
 
   // Adiciona reviews dos commits válidos e grandes na mesma seção
   for (const review of commitReviews) {
