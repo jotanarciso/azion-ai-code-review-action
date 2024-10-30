@@ -116,18 +116,24 @@ async function analyzePR(octokit, context) {
   let finalReview = `# 🔍 Code Review
 
 ## Table of Contents
-- [Large Commits](#large-commits)${largeCommits.length > 0 ? '' : ' (None)'}
 - [Commit Reviews](#commit-reviews)
-${commitReviews.map(r => `  - [${r.sha.substring(0,7)}](#commit-${r.sha.substring(0,7)})`).join('\n')}
+${commitReviews.map(r => `  - [${r.sha.substring(0,7)}](#${r.sha.substring(0,7)})`).join('\n')}
+${largeCommits.map(r => `  - [${r.sha.substring(0,7)}](#${r.sha.substring(0,7)}) ❌`).join('\n')}
 - [Summary](#summary)
 
-`;
+## Commit Reviews\n\n`;
 
-  // Adiciona seção de commits muito grandes
-  if (largeCommits.length > 0) {
-    finalReview += '## Large Commits\n\n';
-    for (const commit of largeCommits) {
-      finalReview += `### ❌ Commit ${commit.sha.substring(0,7)}
+  // Adiciona reviews dos commits válidos e grandes na mesma seção
+  for (const review of commitReviews) {
+    finalReview += `### ✅ <span id="${review.sha.substring(0,7)}">Commit ${review.sha.substring(0,7)}</span>
+> ${review.message}
+
+${review.review}
+---\n\n`;
+  }
+
+  for (const commit of largeCommits) {
+    finalReview += `### ❌ <span id="${commit.sha.substring(0,7)}">Commit ${commit.sha.substring(0,7)}</span>
 > ${commit.message}
 
 This commit exceeds the recommended limit of ${MAX_CHANGES} lines (found ${commit.changes} changes).
@@ -138,17 +144,6 @@ Please consider breaking down the changes into smaller, incremental commits for 
 - Make incremental changes
 - Keep each commit with a single purpose
 
----\n\n`;
-    }
-  }
-
-  // Adiciona reviews dos commits válidos
-  finalReview += '## Commit Reviews\n\n';
-  for (const review of commitReviews) {
-    finalReview += `### ✅ Commit <a id="commit-${review.sha.substring(0,7)}">${review.sha.substring(0,7)}</a>
-> ${review.message}
-
-${review.review}
 ---\n\n`;
   }
 
