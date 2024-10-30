@@ -39,29 +39,34 @@ jobs:
           AZION_TOKEN: ${{ secrets.AZION_TOKEN }}
         run: |
           node ./scripts/code-review.mjs
-        continue-on-error: true
         id: code_review
 
       - name: Display error logs
-        if: failure() && steps.code_review.outcome == 'failure'
+        if: failure()
         run: |
           echo "Error during code review execution:"
           cat ${{ github.workspace }}/*.log
 
       - name: Update PR Status
+        if: always()
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const conclusion = steps.code_review.outcome === 'success' ? 'success' : 'failure';
+            const summary = steps.code_review.outcome === 'success' 
+              ? 'The code review was completed successfully.'
+              : 'The code review process failed. Please check the logs for more details.';
+            
             github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               name: 'Azion AI Code Review',
               head_sha: context.payload.pull_request.head.sha,
               status: 'completed',
-              conclusion: 'success',
+              conclusion: conclusion,
               output: {
-                title: 'Code review completed',
-                summary: 'The code review was completed successfully.'
+                title: `Code review ${conclusion}`,
+                summary: summary
               }
             })
