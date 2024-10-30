@@ -49,30 +49,21 @@ async function analyzePR(octokit, context) {
   });
 
   let finalReview = '# Code Review Summary\n\n';
+  let commitReviews = [];
+  let largeCommits = [];
   
+  // Analisa cada commit
   for (const commit of commits.data) {
     const changes = await getCommitChanges(octokit, context, commit.sha);
     const totalChanges = changes.files.reduce((acc, file) => 
       acc + file.additions + file.deletions, 0);
 
     if (totalChanges > MAX_CHANGES) {
-      const errorMessage = `### ⚠️ Large Changes Detected in Commit ${commit.sha.substring(0,7)}
-
-This commit exceeds the recommended limit of ${MAX_CHANGES} lines.
-Please consider breaking down the changes into smaller, incremental commits for better review.
-
-**Recommendations:**
-- Split changes into smaller, focused commits
-- Make incremental changes
-- Keep each commit with a single purpose`;
-
-      await octokit.rest.issues.createComment({
-        owner: context.repo.owner,
-        repo: context.repo.repo,
-        issue_number: context.payload.pull_request.number,
-        body: errorMessage
+      largeCommits.push({
+        sha: commit.sha,
+        message: commit.commit.message,
+        changes: totalChanges
       });
-      
       continue;
     }
 
@@ -91,20 +82,75 @@ Please consider breaking down the changes into smaller, incremental commits for 
       );
 
       if (response) {
-        finalReview += `\n## Review for commit ${commit.sha.substring(0,7)}
-> ${commit.commit.message}
-
-${response.choices[0].message.content}
----
-`;
-      } else {
-        console.error('Error in AI response:', error);
-        finalReview += `\n\n### ❌ Error analyzing commit ${commit.sha.substring(0,7)}`;
+        commitReviews.push({
+          sha: commit.sha,
+          message: commit.commit.message,
+          review: response.choices[0].message.content
+        });
       }
     } catch (error) {
       console.error(`Error analyzing commit ${commit.sha}:`, error);
-      finalReview += `\n\n### ❌ Error analyzing commit ${commit.sha.substring(0,7)}`;
     }
+  }
+
+  // Adiciona seção de commits muito grandes
+  if (largeCommits.length > 0) {
+    finalReview += '## ⚠️ Large Commits Detected\n\n';
+    for (const commit of largeCommits) {
+      finalReview += `### ❌ Commit ${commit.sha.substring(0,7)}
+> ${commit.message}
+
+This commit exceeds the recommended limit of ${MAX_CHANGES} lines (found ${commit.changes} changes).
+Please consider breaking down the changes into smaller, incremental commits for better review.
+
+**Recommendations:**
+- Split changes into smaller, focused commits
+- Make incremental changes
+- Keep each commit with a single purpose
+
+---\n\n`;
+    }
+  }
+
+  // Adiciona reviews dos commits válidos
+  finalReview += '## Commit Reviews\n\n';
+  for (const review of commitReviews) {
+    finalReview += `### ✅ Commit ${review.sha.substring(0,7)}
+> ${review.message}
+
+${review.review}
+---\n\n`;
+  }
+
+  // Gera resumo final do PR
+  const prContext = await getPRContext(octokit, context);
+  const { data: finalSummary } = await chat(
+    {
+      messages: [
+        {
+          role: 'user',
+          content: `Based on the following PR information and commit reviews, provide a concise summary of all changes:
+
+${prContext}
+
+Commits Analysis:
+${commitReviews.map(r => `- ${r.sha.substring(0,7)}: ${r.message}`).join('\n')}
+
+${largeCommits.length > 0 ? `\nNote: ${largeCommits.length} commits were too large to analyze.` : ''}
+
+Please provide:
+1. Overall impact of changes
+2. Key modifications
+3. Potential concerns
+4. Final recommendations`
+        }
+      ]
+    },
+    { debug: true }
+  );
+
+  if (finalSummary) {
+    finalReview += `## Overall Summary\n\n${finalSummary.choices[0].message.content}\n\n`;
   }
 
   const logoUrl = 'https://avatars.githubusercontent.com/u/6660972?s=200&v=4';
