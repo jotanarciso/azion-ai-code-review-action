@@ -87,6 +87,7 @@ async function analyzePR(octokit, context) {
       largeCommits.push({
         sha: commit.sha,
         message: commit.commit.message,
+        author: commit.commit.author.name,
         changes: totalChanges
       });
       continue;
@@ -110,6 +111,7 @@ async function analyzePR(octokit, context) {
         commitReviews.push({
           sha: commit.sha,
           message: commit.commit.message,
+          author: commit.commit.author.name,
           review: response.choices[0].message.content
         });
       }
@@ -124,8 +126,8 @@ async function analyzePR(octokit, context) {
 ## Table of Contents
 - [Summary](#summary)
 - [Commit Reviews](#commit-reviews)
-${commitReviews.map(r => `  - [${r.sha.substring(0,7)}: ${r.message}](#${r.sha.substring(0,7)})`).join('\n')}
-${largeCommits.map(r => `  - [${r.sha.substring(0,7)}: ${r.message}](#${r.sha.substring(0,7)}) ❌`).join('\n')}
+${commitReviews.map(r => `  - [${r.sha.substring(0,7)}: ${r.message}](#${r.sha.substring(0,7)}) by ${r.author}`).join('\n')}
+${largeCommits.map(r => `  - [${r.sha.substring(0,7)}: ${r.message}](#${r.sha.substring(0,7)}) by ${r.author} ❌`).join('\n')}
 
 `;
 
@@ -159,14 +161,14 @@ Provide a brief, focused summary of the changes, their impact, and any key recom
 
   // Adiciona reviews dos commits válidos e grandes na mesma seção
   for (const review of commitReviews) {
-    finalReview += `### ✅ <span id="${review.sha.substring(0,7)}">Commit ${review.sha.substring(0,7)}: ${review.message}</span>
+    finalReview += `### ✅ <span id="${review.sha.substring(0,7)}">Commit ${review.sha.substring(0,7)}: ${review.message}</span> by ${review.author}
 
 ${review.review}
 ---\n\n`;
   }
 
   for (const commit of largeCommits) {
-    finalReview += `### ❌ <span id="${commit.sha.substring(0,7)}">Commit ${commit.sha.substring(0,7)}: ${commit.message}</span>
+    finalReview += `### ❌ <span id="${commit.sha.substring(0,7)}">Commit ${commit.sha.substring(0,7)}: ${commit.message}</span> by ${commit.author}
 
 This commit exceeds the recommended limit of ${MAX_CHANGES} lines (found ${commit.changes} changes).
 Please consider breaking down the changes into smaller, incremental commits for better review.
