@@ -1,156 +1,133 @@
-import * as github from '@actions/github';
-import { streamChat } from 'azion/ai';
+import { getOctokit } from '@actions/github';
+import { Azion } from 'azion';
 
-const DEFAULT_PROMPT = `Analyze the following pull request and provide a summary of what it implements, including good practices, possible problems, and suggestions for improvement.
-Provide your analysis in Markdown format, starting with a general summary of the pull request.`;
+const MAX_CHANGES = 1000;
 
-const MAX_FILES = 10;
-
-async function* analyzeFileStream(file, octokit, context, pullRequest) {
-  try {
-    const { data: content } = await octokit.rest.repos.getContent({
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      path: file.filename,
-      ref: pullRequest.head.sha,
-    });
-
-    const fileContent = Buffer.from(content.content, 'base64').toString('utf-8');
-    
-    const filePrompt = `Analyze this file and provide a brief summary of its contents and any potential issues:
-File: ${file.filename}
-
-${fileContent}`;
-
-    let analysisText = '';
-    const stream = streamChat({
-      messages: [{ role: 'user', content: filePrompt }]
-    });
-
-    for await (const { data, error } of stream) {
-      if (error) {
-        throw error;
-      }
-      if (data?.choices[0]?.delta?.content) {
-        analysisText += data.choices[0].delta.content;
-        // Yield progress para feedback em tempo real
-        yield {
-          type: 'progress',
-          filename: file.filename,
-          content: data.choices[0].delta.content
-        };
-      }
-    }
-
-    return {
-      type: 'complete',
-      filename: file.filename,
-      analysis: analysisText
-    };
-  } catch (error) {
-    console.error(`Error analyzing file ${file.filename}:`, error.message);
-    return {
-      type: 'error',
-      filename: file.filename,
-      error: error.message
-    };
-  }
+async function getCommitChanges(octokit, context, commitSha) {
+  const response = await octokit.rest.repos.getCommit({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    ref: commitSha
+  });
+  
+  return response.data;
 }
 
-async function runCodeReview() {
-  const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
-  const context = github.context;
+async function buildCommitContext(commit, changes) {
+  const files = changes.files.map(file => ({
+    name: file.filename,
+    changes: `Added: ${file.additions}, Removed: ${file.deletions}`,
+    patch: file.patch
+  }));
 
-  try {
-    console.log('Starting code review...');
+  return `
+## Commit Context
+- SHA: ${commit.sha}
+- Author: ${commit.commit.author.name}
+- Message: ${commit.commit.message}
 
-    const { data: pullRequest } = await octokit.rest.pulls.get({
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      pull_number: context.payload.pull_request.number,
-    });
+### Changed Files:
+${files.map(f => `- ${f.name} (${f.changes})`).join('\n')}
 
-    const { data: files } = await octokit.rest.pulls.listFiles({
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      pull_number: context.payload.pull_request.number,
-    });
+### Code Changes:
+\`\`\`diff
+${files.map(f => f.patch).join('\n')}
+\`\`\`
+`;
+}
 
-    if (files.length > MAX_FILES) {
-      console.warn(`Pull request contains ${files.length} files, analyzing only the first ${MAX_FILES}.`);
+async function analyzePR(octokit, context) {
+  const commits = await octokit.rest.pulls.listCommits({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    pull_number: context.issue.number
+  });
+
+  let finalReview = '# Code Review Summary\n\n';
+  
+  for (const commit of commits.data) {
+    const changes = await getCommitChanges(octokit, context, commit.sha);
+    const totalChanges = changes.files.reduce((acc, file) => 
+      acc + file.additions + file.deletions, 0);
+
+    if (totalChanges > MAX_CHANGES) {
+      const errorMessage = `### ⚠️ Large Changes Detected in Commit ${commit.sha.substring(0,7)}
+
+This commit exceeds the recommended limit of ${MAX_CHANGES} lines.
+Please consider breaking down the changes into smaller, incremental commits for better review.
+
+**Recommendations:**
+- Split changes into smaller, focused commits
+- Make incremental changes
+- Keep each commit with a single purpose`;
+
+      await octokit.rest.issues.createComment({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        issue_number: context.issue.number,
+        body: errorMessage
+      });
+      
+      continue;
     }
 
-    const fileAnalyses = [];
-    const analyzableFiles = files
-      .slice(0, MAX_FILES)
-      .filter(file => file.status !== 'removed');
+    try {
+      const commitContext = await buildCommitContext(commit, changes);
+      const azion = new Azion(process.env.AZION_API_TOKEN);
+      const response = await azion.chat.completions.create({
+        messages: [
+          {
+            role: 'system',
+            content: `You are a code review expert. Analyze the following commit and provide:
+1. A brief summary of changes
+2. Code quality assessment
+3. Potential issues or improvements
+4. Security considerations if applicable`
+          },
+          {
+            role: 'user',
+            content: commitContext
+          }
+        ]
+      });
 
-    // Processa arquivos sequencialmente para evitar sobrecarga
-    for (const file of analyzableFiles) {
-      console.log(`Analyzing file: ${file.filename}`);
-      for await (const result of analyzeFileStream(file, octokit, context, pullRequest)) {
-        if (result.type === 'progress') {
-          process.stdout.write('.');  // Feedback visual do progresso
-        } else if (result.type === 'complete') {
-          fileAnalyses.push(result);
-          console.log(`\nCompleted analysis of ${result.filename}`);
-        }
-      }
+      finalReview += `\n## Review for commit ${commit.sha.substring(0,7)}
+> ${commit.commit.message}
+
+${response.choices[0].message.content}
+---
+`;
+    } catch (error) {
+      console.error(`Error analyzing commit ${commit.sha}:`, error);
+      finalReview += `\n\n### ❌ Error analyzing commit ${commit.sha.substring(0,7)}`;
     }
+  }
 
-    // Gera resumo final usando streaming
-    console.log('\nGenerating final summary...');
-    const summaryPrompt = `Provide a summary of the following file analyses:
-
-${fileAnalyses.map(analysis => `## ${analysis.filename}\n${analysis.analysis}`).join('\n\n')}
-
-Provide a concise overall summary of the changes.`;
-
-    let finalSummary = '';
-    const summaryStream = streamChat({
-      messages: [{ role: 'user', content: summaryPrompt }]
-    });
-
-    for await (const { data, error } of summaryStream) {
-      if (error) throw error;
-      if (data?.choices[0]?.delta?.content) {
-        finalSummary += data.choices[0].delta.content;
-        process.stdout.write('.');
-      }
-    }
-
-    const logoUrl = 'https://avatars.githubusercontent.com/u/6660972?s=200&v=4';
-    const logoSize = 14;
-    const footer = `
+  const logoUrl = 'https://avatars.githubusercontent.com/u/6660972?s=200&v=4';
+  const logoSize = 14;
+  const footer = `
 <div align="right">
   <span style="vertical-align: middle; font-size: 12px; line-height: ${logoSize}px;">
     Powered by 
     <img src="${logoUrl}" alt="Azion Logo" width="${logoSize}" height="${logoSize}" style="vertical-align: middle; margin: 0 2px;">
-    <a href="https://github.com/aziontech/lib/tree/main/packages/ai" style="vertical-align: middle; text-decoration: none;">Azion AI</a>
+    <a href="https://github.com/aziontech/lib/tree/main/packages/ai">Azion AI</a>
   </span>
 </div>`;
 
-    const commentBody = finalSummary + '\n\n---\n' + footer;
-
-    await octokit.rest.issues.createComment({
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      issue_number: context.payload.pull_request.number,
-      body: commentBody,
-    });
-
-    console.log('\nCode review completed successfully');
-  } catch (error) {
-    console.error('Error during code review:', error);
-    throw error;
-  }
+  await octokit.rest.issues.createComment({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    issue_number: context.issue.number,
+    body: finalReview + '\n\n---\n' + footer
+  });
 }
 
-(async () => {
-  try {
-    await runCodeReview();
-  } catch (error) {
-    console.error(error);
-    process.exit(1);
-  }
-})();
+try {
+  const token = process.env.GITHUB_TOKEN;
+  const octokit = getOctokit(token);
+  
+  await analyzePR(octokit, context);
+} catch (error) {
+  console.error('Execution error:', error);
+  process.exit(1);
+}
