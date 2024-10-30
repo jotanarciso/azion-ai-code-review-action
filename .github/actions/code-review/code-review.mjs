@@ -68,7 +68,16 @@ async function analyzePR(octokit, context) {
     pull_number: context.payload.pull_request.number
   });
 
-  let finalReview = '# Code Review Summary\n\n';
+  let finalReview = `# 🔍 Code Review
+
+## Table of Contents
+- [Large Commits](#large-commits)${largeCommits.length > 0 ? '' : ' (None)'}
+- [Commit Reviews](#commit-reviews)
+${commitReviews.map(r => `  - [${r.sha.substring(0,7)}](#commit-${r.sha.substring(0,7)})`).join('\n')}
+- [Summary](#summary)
+
+`;
+
   let commitReviews = [];
   let largeCommits = [];
   
@@ -115,7 +124,7 @@ async function analyzePR(octokit, context) {
 
   // Adiciona seção de commits muito grandes
   if (largeCommits.length > 0) {
-    finalReview += '## ⚠️ Large Commits Detected\n\n';
+    finalReview += '## Large Commits\n\n';
     for (const commit of largeCommits) {
       finalReview += `### ❌ Commit ${commit.sha.substring(0,7)}
 > ${commit.message}
@@ -135,7 +144,7 @@ Please consider breaking down the changes into smaller, incremental commits for 
   // Adiciona reviews dos commits válidos
   finalReview += '## Commit Reviews\n\n';
   for (const review of commitReviews) {
-    finalReview += `### ✅ Commit ${review.sha.substring(0,7)}
+    finalReview += `### ✅ Commit <a id="commit-${review.sha.substring(0,7)}">${review.sha.substring(0,7)}</a>
 > ${review.message}
 
 ${review.review}
@@ -149,20 +158,14 @@ ${review.review}
       messages: [
         {
           role: 'user',
-          content: `Based on the following PR information and commit reviews, provide a concise summary of all changes:
-
-${prContext}
+          content: `${prContext}
 
 Commits Analysis:
 ${commitReviews.map(r => `- ${r.sha.substring(0,7)}: ${r.message}`).join('\n')}
 
 ${largeCommits.length > 0 ? `\nNote: ${largeCommits.length} commits were too large to analyze.` : ''}
 
-Please provide:
-1. Overall impact of changes
-2. Key modifications
-3. Potential concerns
-4. Final recommendations`
+Provide a brief, focused summary of the changes, their impact, and any key recommendations.`
         }
       ]
     },
@@ -170,7 +173,7 @@ Please provide:
   );
 
   if (finalSummary) {
-    finalReview += `## Overall Summary\n\n${finalSummary.choices[0].message.content}\n\n`;
+    finalReview += `## 📋 Summary\n\n${finalSummary.choices[0].message.content}\n\n`;
   }
 
   const logoUrl = 'https://avatars.githubusercontent.com/u/6660972?s=200&v=4';
