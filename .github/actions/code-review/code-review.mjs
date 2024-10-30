@@ -11,7 +11,7 @@ const CUSTOM_PROMPT = process.env.CUSTOM_PROMPT || `Analyze the following commit
 const MAX_CHANGES = parseInt(process.env.MAX_FILES) || 1000;
 
 const HEADER = `<div align="center">
-  <img src="https://i.postimg.cc/vm4jJ20w/azion-ai.webp" alt="Azion AI Logo" width="500" height="301">
+  <img src="https://i.postimg.cc/vm4jJ20w/azion-ai.webp" alt="Azion AI Logo" width="300" height="300">
 </div>\n\n`;
 
 async function getCommitChanges(octokit, context, commitSha) {
