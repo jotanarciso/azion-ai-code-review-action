@@ -7,7 +7,7 @@ Provide your analysis in Markdown format, starting with a general summary of the
 async function runCodeReview() {
   const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
   const context = github.context;
-  const maxFiles = parseInt(process.env.MAX_FILES || '10');
+  const maxFiles = parseInt(process.env.MAX_FILES || '15');
 
   try {
     const { data: pullRequest } = await octokit.rest.pulls.get({
