@@ -41,6 +41,26 @@ ${files.map(f => f.patch).join('\n')}
 `;
 }
 
+async function getPRContext(octokit, context) {
+  const pr = await octokit.rest.pulls.get({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    pull_number: context.payload.pull_request.number
+  });
+
+  return `
+## Pull Request Information
+Title: ${pr.data.title}
+Description: ${pr.data.body || 'No description provided'}
+Author: ${pr.data.user.login}
+Base Branch: ${pr.data.base.ref}
+Head Branch: ${pr.data.head.ref}
+Number of Files Changed: ${pr.data.changed_files}
+Total Additions: ${pr.data.additions}
+Total Deletions: ${pr.data.deletions}
+`;
+}
+
 async function analyzePR(octokit, context) {
   const commits = await octokit.rest.pulls.listCommits({
     owner: context.repo.owner,
