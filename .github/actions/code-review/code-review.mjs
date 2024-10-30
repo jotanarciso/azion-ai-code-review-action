@@ -68,16 +68,6 @@ async function analyzePR(octokit, context) {
     pull_number: context.payload.pull_request.number
   });
 
-  let finalReview = `# 🔍 Code Review
-
-## Table of Contents
-- [Large Commits](#large-commits)${largeCommits.length > 0 ? '' : ' (None)'}
-- [Commit Reviews](#commit-reviews)
-${commitReviews.map(r => `  - [${r.sha.substring(0,7)}](#commit-${r.sha.substring(0,7)})`).join('\n')}
-- [Summary](#summary)
-
-`;
-
   let commitReviews = [];
   let largeCommits = [];
   
@@ -121,6 +111,17 @@ ${commitReviews.map(r => `  - [${r.sha.substring(0,7)}](#commit-${r.sha.substrin
       console.error(`Error analyzing commit ${commit.sha}:`, error);
     }
   }
+
+  // Agora que temos os arrays preenchidos, montamos o review
+  let finalReview = `# 🔍 Code Review
+
+## Table of Contents
+- [Large Commits](#large-commits)${largeCommits.length > 0 ? '' : ' (None)'}
+- [Commit Reviews](#commit-reviews)
+${commitReviews.map(r => `  - [${r.sha.substring(0,7)}](#commit-${r.sha.substring(0,7)})`).join('\n')}
+- [Summary](#summary)
+
+`;
 
   // Adiciona seção de commits muito grandes
   if (largeCommits.length > 0) {
