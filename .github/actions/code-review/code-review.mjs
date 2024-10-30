@@ -8,6 +8,10 @@ const DEFAULT_PROMPT = `Analyze the following commit and provide:
 3. Potential issues or improvements
 4. Security considerations if applicable`;
 
+const HEADER = `<div align="center">
+  <img src="../../../actions/azion-ai-logo.png" alt="Azion AI Logo" width="150" height="150">
+</div>\n\n`;
+
 async function getCommitChanges(octokit, context, commitSha) {
   const response = await octokit.rest.repos.getCommit({
     owner: context.repo.owner,
@@ -113,7 +117,7 @@ async function analyzePR(octokit, context) {
   }
 
   // Agora que temos os arrays preenchidos, montamos o review
-  let finalReview = `# 🔍 Code Review
+  let finalReview = `${HEADER}# 🔍 Code Review
 
 ## Table of Contents
 - [Commit Reviews](#commit-reviews)
