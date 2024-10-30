@@ -1,9 +1,13 @@
 import * as github from '@actions/github';
-import { chat } from 'azion/i';
+import { chat } from 'azion/ai';
+
+const DEFAULT_PROMPT = `Analyze the following pull request and provide a summary of what it implements, including good practices, possible problems, and suggestions for improvement.
+Provide your analysis in Markdown format, starting with a general summary of the pull request.`;
 
 async function runCodeReview() {
   const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
   const context = github.context;
+  const maxFiles = parseInt(process.env.MAX_FILES || '10');
 
   try {
     const { data: pullRequest } = await octokit.rest.pulls.get({
@@ -18,8 +22,12 @@ async function runCodeReview() {
       pull_number: context.payload.pull_request.number,
     });
 
+    if (files.length > maxFiles) {
+      console.warn(`Pull request contains ${files.length} files, which exceeds the maximum of ${maxFiles}. Only the first ${maxFiles} files will be reviewed.`);
+    }
+
     let fullContent = '';
-    for (const file of files) {
+    for (const file of files.slice(0, maxFiles)) {
       if (file.status !== 'removed') {
         const { data: content } = await octokit.rest.repos.getContent({
           owner: context.repo.owner,
@@ -33,11 +41,7 @@ async function runCodeReview() {
       }
     }
 
-    const prompt = `Analyze the following pull request and provide a summary of what it implements, including good practices, possible problems, and suggestions for improvement:
-
-${fullContent}
-
-Provide your analysis in Markdown format, starting with a general summary of the pull request.`;
+    const prompt = `${process.env.CUSTOM_PROMPT || DEFAULT_PROMPT}\n\n${fullContent}`;
 
     const { data: response, error } = await chat(
       {

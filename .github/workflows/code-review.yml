@@ -17,51 +17,14 @@ jobs:
     name: AI Code Review
     runs-on: ubuntu-latest
     steps:
-      - name: 📥 Checkout Repository
+      - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: 🔧 Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-
-      - name: 📦 Install Dependencies
-        run: |
-          echo "Installing project dependencies..."
-          npm install
-          echo "Installing @actions/github..."
-          npm install @actions/github
-
-      - name: 🤖 Execute AI Code Review
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          AZION_TOKEN: ${{ secrets.AZION_TOKEN }}
-        run: |
-          echo "Starting AI code review process..."
-          node ./scripts/code-review.mjs
-        id: code_review
-
-      - name: 📝 Update Pull Request Status
-        if: always()
-        uses: actions/github-script@v6
+      - name: Run AI Code Review
+        uses: ./.github/actions/code-review
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            console.log('Updating pull request status...');
-            const conclusion = '${{ steps.code_review.outcome }}' === 'success' ? 'success' : 'failure';
-            const summary = '${{ steps.code_review.outcome }}' === 'success' 
-              ? 'The code review was completed successfully.'
-              : 'The code review process failed. Please check the logs for more details.';
-            
-            github.rest.checks.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              name: 'Azion AI Code Review',
-              head_sha: context.payload.pull_request.head.sha,
-              status: 'completed',
-              conclusion: conclusion,
-              output: {
-                title: `Code review ${conclusion}`,
-                summary: summary
-              }
-            })
+          azion-token: ${{ secrets.AZION_TOKEN }}
+          prompt: |
+            Analyze the following pull request and provide a summary of what it implements, including good practices, possible problems, and suggestions for improvement.
+          max-files: 10
