@@ -1,0 +1,9 @@
+{
+    "name": "azion-ai-code-review-action",
+    "version": "1.0.0",
+    "type": "module",
+    "dependencies": {
+      "@actions/github": "^6.0.0",
+      "azion": "^1.9.0"
+    }
+  }
