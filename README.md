@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@v3
       
       - name: Run AI Code Review
-        uses: aziontech/azion-github-actions/actions/azion-ai-code-review@main
+        uses: jotanarciso/azion-ai-code-review-action@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           azion-token: ${{ secrets.AZION_TOKEN }}
