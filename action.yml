@@ -6,14 +6,13 @@ inputs:
     description: 'GitHub token'
     required: true
   azion-token:
-    description: 'Azion AI token'
+    description: 'Azion token'
     required: true
   prompt:
     description: 'Custom prompt for the AI code review'
     required: false
     default: |
       Analyze the following pull request and provide a summary of what it implements, including good practices, possible problems, and suggestions for improvement.
-      Provide your analysis in Markdown format, starting with a general summary of the pull request.
   max-files:
     description: 'Maximum number of files to review'
     required: false
@@ -27,12 +26,6 @@ runs:
       with:
         node-version: '18'
 
-    - name: Install Dependencies
-      shell: bash
-      run: |
-        npm install
-        npm install @actions/github
-
     - name: Execute AI Code Review
       shell: bash
       env:
@@ -40,4 +33,4 @@ runs:
         AZION_TOKEN: ${{ inputs.azion-token }}
         CUSTOM_PROMPT: ${{ inputs.prompt }}
         MAX_LINES: ${{ inputs.max-files }}
-      run: node ${{ github.action_path }}/code-review.mjs
+      run: node ${{ github.action_path }}/entrypoint.mjs
