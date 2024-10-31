@@ -1,0 +1,212 @@
+import { getOctokit } from '@actions/github';
+import { chat } from 'azion';
+
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const AZION_TOKEN = process.env.AZION_TOKEN;
+const CUSTOM_PROMPT = process.env.CUSTOM_PROMPT;
+const MAX_FILES = parseInt(process.env.MAX_FILES || '1000');
+
+if (!GITHUB_TOKEN) {
+  throw new Error('GITHUB_TOKEN is required');
+}
+
+if (!AZION_TOKEN) {
+  throw new Error('AZION_TOKEN is required');
+}
+
+const octokit = getOctokit(GITHUB_TOKEN);
+
+const HEADER = `<div align="center">
+  <img src="https://i.postimg.cc/vm4jJ20w/azion-ai.webp" alt="Azion AI Logo" width="300" height="300">
+</div>\n\n`;
+
+async function getCommitChanges(octokit, context, commitSha) {
+  const response = await octokit.rest.repos.getCommit({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    ref: commitSha
+  });
+  
+  return response.data;
+}
+
+async function buildCommitContext(commit, changes) {
+  const files = changes.files.map(file => ({
+    name: file.filename,
+    changes: `Added: ${file.additions}, Removed: ${file.deletions}`,
+    patch: file.patch
+  }));
+
+  return `
+## Commit Analysis
+SHA: ${commit.sha}
+Author: ${commit.commit.author.name}
+Message: ${commit.commit.message}
+
+Changed Files:
+${files.map(f => `- ${f.name} (${f.changes})`).join('\n')}
+
+Code Changes:
+\`\`\`diff
+${files.map(f => f.patch).join('\n')}
+\`\`\`
+`;
+}
+
+async function getPRContext(octokit, context) {
+  const pr = await octokit.rest.pulls.get({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    pull_number: context.payload.pull_request.number
+  });
+
+  return `
+## Pull Request Information
+Title: ${pr.data.title}
+Description: ${pr.data.body || 'No description provided'}
+Author: ${pr.data.user.login}
+Base Branch: ${pr.data.base.ref}
+Head Branch: ${pr.data.head.ref}
+Number of Files Changed: ${pr.data.changed_files}
+Total Additions: ${pr.data.additions}
+Total Deletions: ${pr.data.deletions}
+`;
+}
+
+async function analyzePR(octokit, context) {
+  const commits = await octokit.rest.pulls.listCommits({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    pull_number: context.payload.pull_request.number
+  });
+
+  let commitReviews = [];
+  let largeCommits = [];
+  
+  for (const commit of commits.data) {
+    const changes = await getCommitChanges(octokit, context, commit.sha);
+    const totalChanges = changes.files.reduce((acc, file) => 
+      acc + file.additions + file.deletions, 0);
+
+    if (totalChanges > MAX_FILES) {
+      largeCommits.push({
+        sha: commit.sha,
+        message: commit.commit.message,
+        author: commit.commit.author.name,
+        changes: totalChanges
+      });
+      continue;
+    }
+
+    try {
+      const commitContext = await buildCommitContext(commit, changes);
+      const { data: response, error } = await chat(
+        {
+          messages: [
+            { 
+              role: 'user', 
+              content: `${CUSTOM_PROMPT}\n\n${commitContext}` 
+            }
+          ]
+        },
+        { debug: true }
+      );
+
+      if (response) {
+        commitReviews.push({
+          sha: commit.sha,
+          message: commit.commit.message,
+          author: commit.commit.author.name,
+          review: response.choices[0].message.content
+        });
+      }
+    } catch (error) {
+      console.error(`Error analyzing commit ${commit.sha}:`, error);
+    }
+  }
+
+
+  let finalReview = `${HEADER}# 🔍 Azion AI - Code Review
+
+## Table of Contents
+- [Summary](#summary)
+- [Commit Reviews](#commit-reviews)
+${commitReviews.map(r => `  - [${r.sha.substring(0,7)}: ${r.message}](#${r.sha.substring(0,7)}) by ${r.author}`).join('\n')}
+${largeCommits.map(r => `  - [${r.sha.substring(0,7)}: ${r.message}](#${r.sha.substring(0,7)}) by ${r.author} ❌`).join('\n')}
+
+`;
+
+  const prContext = await getPRContext(octokit, context);
+  const { data: finalSummary } = await chat(
+    {
+      messages: [
+        {
+          role: 'user',
+          content: `${CUSTOM_PROMPT}\n\n${prContext}
+
+Commits Analysis:
+${commitReviews.map(r => `- ${r.sha.substring(0,7)}: ${r.message}`).join('\n')}
+
+${largeCommits.length > 0 ? `\nNote: ${largeCommits.length} commits were too large to analyze.` : ''}
+
+Provide a brief, focused summary of the changes, their impact, and any key recommendations.`
+        }
+      ]
+    },
+    { debug: true }
+  );
+
+  if (finalSummary) {
+    finalReview += `## 📋 <span id="summary">Summary</span>\n\n${finalSummary.choices[0].message.content}\n\n`;
+  }
+
+  finalReview += `## <span id="commit-reviews">Commit Reviews</span>\n\n`;
+
+  for (const review of commitReviews) {
+    finalReview += `### ✅ <span id="${review.sha.substring(0,7)}">Commit ${review.sha.substring(0,7)}: ${review.message}</span> by ${review.author}
+
+${review.review}
+---\n\n`;
+  }
+
+  for (const commit of largeCommits) {
+    finalReview += `### ❌ <span id="${commit.sha.substring(0,7)}">Commit ${commit.sha.substring(0,7)}: ${commit.message}</span> by ${commit.author}
+
+This commit exceeds the recommended limit of ${MAX_FILES} lines (found ${commit.changes} changes).
+Please consider breaking down the changes into smaller, incremental commits for better review.
+
+**Recommendations:**
+- Split changes into smaller, focused commits
+- Make incremental changes
+- Keep each commit with a single purpose
+
+---\n\n`;
+  }
+
+  const logoUrl = 'https://avatars.githubusercontent.com/u/6660972?s=200&v=4';
+  const logoSize = 14;
+  const footer = `
+<div align="right">
+  <span style="vertical-align: middle; font-size: 12px; line-height: ${logoSize}px;">
+    Powered by 
+    <img src="${logoUrl}" alt="Azion Logo" width="${logoSize}" height="${logoSize}" style="vertical-align: middle; margin: 0 2px;">
+    <a href="https://github.com/aziontech/lib/tree/main/packages/ai">Azion AI</a>
+  </span>
+</div>`;
+
+  await octokit.rest.issues.createComment({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    issue_number: context.payload.pull_request.number,
+    body: finalReview + '\n\n---\n' + footer
+  });
+}
+
+(async () => {
+  try {
+    await analyzePR(octokit, github.context);
+  } catch (error) {
+    console.error('Execution error:', error);
+    process.exit(1);
+  }
+})();
